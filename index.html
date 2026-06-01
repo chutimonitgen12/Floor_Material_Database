@@ -18,16 +18,17 @@
         th, td { border: 1px solid var(--border); padding: 12px; text-align: center; vertical-align: middle; }
         th { background-color: var(--primary); color: white; white-space: nowrap; }
         input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        button { background-color: var(--secondary); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        button:hover { background-color: #128f76; }
+        button { background-color: var(--secondary); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s;}
+        button:hover { opacity: 0.8; }
         .btn-danger { background-color: #e74c3c; padding: 8px 12px; }
         .summary-box { background-color: #e8f8f5; border-left: 5px solid var(--secondary); padding: 20px; margin-top: 20px; display: flex; justify-content: space-between; align-items: center; }
         .note-cell input { background-color: #fff9e6; border: 1px dashed #d4ac0d; }
         
-        .project-bar { display: flex; gap: 15px; background: var(--primary); padding: 15px; border-radius: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
-        .project-bar select { flex: 1; padding: 10px; border-radius: 5px; border: none; min-width: 200px; }
-        .project-bar button { background: #3498db; }
-        .project-bar button:hover { background: #2980b9; }
+        .project-bar { display: flex; gap: 10px; background: var(--primary); padding: 15px; border-radius: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+        .project-bar select { flex: 1; padding: 10px; border-radius: 5px; border: none; min-width: 200px; font-weight: bold;}
+        .btn-create { background: #3498db; }
+        .btn-edit { background: #f39c12; }
+        .btn-delete { background: #e74c3c; }
         .status { color: #f1c40f; font-size: 0.9em; margin-left: auto; font-weight: bold; }
         .sum-table td { font-weight: bold; }
     </style>
@@ -39,7 +40,9 @@
 
     <div class="project-bar">
         <select id="project-selector" onchange="loadProject()"></select>
-        <button onclick="createNewProject()">+ สร้างโปรเจกต์ใหม่</button>
+        <button class="btn-create" onclick="createNewProject()">+ สร้างใหม่</button>
+        <button class="btn-edit" onclick="renameProject()">✏️ แก้ไขชื่อ</button>
+        <button class="btn-delete" onclick="deleteProject()">🗑️ ลบ</button>
         <span class="status" id="save-status">🌐 กำลังเชื่อมต่อ Cloud...</span>
     </div>
 
@@ -141,11 +144,11 @@
     let currentProject = '';
     let saveTimeout;
 
+    // ระบบโหลดครั้งแรก
     async function syncFromCloud() {
         document.getElementById('save-status').innerText = '⏳ กำลังดึงข้อมูลจาก Cloud...';
         try {
             if(WEB_APP_URL.includes("วางURL")) throw new Error("No URL");
-            
             let response = await fetch(WEB_APP_URL);
             projects = await response.json();
             
@@ -163,6 +166,7 @@
         }
     }
 
+    // เซฟอัตโนมัติ
     async function syncToCloud() {
         if(WEB_APP_URL.includes("วางURL")) {
             localStorage.setItem('offline_projects', JSON.stringify(projects));
@@ -170,19 +174,82 @@
             return;
         }
 
-        document.getElementById('save-status').innerText = '💾 กำลังอัปโหลดข้อมูลคลาวด์...';
+        document.getElementById('save-status').innerText = '💾 กำลังบันทึกข้อมูล...';
         try {
-            let payload = { projectName: currentProject, projectData: projects[currentProject] };
-            await fetch(WEB_APP_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                cache: 'no-cache',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            let payload = { action: "save", projectName: currentProject, projectData: projects[currentProject] };
+            await fetch(WEB_APP_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
             document.getElementById('save-status').innerText = '☁️ บันทึกลง Cloud สำเร็จ';
         } catch (error) {
             document.getElementById('save-status').innerText = '❌ บันทึกคลาวด์ล้มเหลว';
+        }
+    }
+
+    // ฟังก์ชันสร้างใหม่
+    function createNewProject() {
+        let name = prompt("ระบุชื่อโปรเจกต์ของลูกค้าคนใหม่:");
+        if (name) {
+            if(projects[name]){
+                alert("ชื่อนี้ถูกใช้งานแล้ว กรุณาตั้งชื่ออื่น"); return;
+            }
+            projects[name] = getEmptyProjectData();
+            currentProject = name;
+            updateProjectSelector();
+            loadProject();
+            syncToCloud();
+        }
+    }
+
+    // ฟังก์ชันแก้ไขชื่อโปรเจกต์
+    async function renameProject() {
+        let newName = prompt("แก้ไขชื่อโปรเจกต์:", currentProject);
+        if (!newName || newName === currentProject) return;
+        if (projects[newName]) {
+            alert("ชื่อนี้มีอยู่แล้วในระบบ กรุณาใช้ชื่ออื่น"); return;
+        }
+
+        document.getElementById('save-status').innerText = '⏳ กำลังเปลี่ยนชื่อ...';
+        try {
+            if(!WEB_APP_URL.includes("วางURL")) {
+                await fetch(WEB_APP_URL, {
+                    method: 'POST', mode: 'no-cors',
+                    body: JSON.stringify({ action: "rename", projectName: currentProject, newProjectName: newName })
+                });
+            }
+            projects[newName] = projects[currentProject];
+            delete projects[currentProject];
+            currentProject = newName;
+            updateProjectSelector();
+            document.getElementById('save-status').innerText = '✔️ เปลี่ยนชื่อสำเร็จ';
+            if(WEB_APP_URL.includes("วางURL")) localStorage.setItem('offline_projects', JSON.stringify(projects));
+        } catch(e) {
+            document.getElementById('save-status').innerText = '❌ เปลี่ยนชื่อล้มเหลว';
+        }
+    }
+
+    // ฟังก์ชันลบโปรเจกต์
+    async function deleteProject() {
+        let keys = Object.keys(projects);
+        if (keys.length <= 1) {
+            alert("ไม่สามารถลบโปรเจกต์สุดท้ายได้ ต้องมีอย่างน้อย 1 โปรเจกต์ในระบบ"); return;
+        }
+        if (!confirm(`⚠️ ยืนยันการลบโปรเจกต์ "${currentProject}" ใช่หรือไม่?\n(ข้อมูลจะถูกลบอย่างถาวร)`)) return;
+
+        document.getElementById('save-status').innerText = '⏳ กำลังลบข้อมูล...';
+        try {
+            if(!WEB_APP_URL.includes("วางURL")) {
+                await fetch(WEB_APP_URL, {
+                    method: 'POST', mode: 'no-cors',
+                    body: JSON.stringify({ action: "delete", projectName: currentProject })
+                });
+            }
+            delete projects[currentProject];
+            currentProject = Object.keys(projects)[0]; // สลับไปโปรเจกต์แรกอัตโนมัติ
+            updateProjectSelector();
+            loadProject();
+            document.getElementById('save-status').innerText = '✔️ ลบโปรเจกต์สำเร็จ';
+            if(WEB_APP_URL.includes("วางURL")) localStorage.setItem('offline_projects', JSON.stringify(projects));
+        } catch(e) {
+            document.getElementById('save-status').innerText = '❌ ลบล้มเหลว';
         }
     }
 
@@ -206,29 +273,16 @@
         }
     }
 
-    function createNewProject() {
-        let name = prompt("ระบุชื่อโปรเจกต์ของลูกค้าคนใหม่:");
-        if (name && !projects[name]) {
-            projects[name] = getEmptyProjectData();
-            currentProject = name;
-            updateProjectSelector();
-            loadProject();
-            syncToCloud();
-        }
-    }
-
     function loadProject() {
         currentProject = document.getElementById('project-selector').value;
         let data = projects[currentProject];
 
-        // Load Settings
         document.getElementById('spc-waste').value = data.settings.waste || 7;
         document.getElementById('len-bua').value = data.settings.bua || 3.0;
         document.getElementById('len-edging').value = data.settings.edging || 2.4;
         document.getElementById('len-trans').value = data.settings.trans || 2.4;
         document.getElementById('len-corner').value = data.settings.corner || 2.4;
 
-        // Load SPC
         let spcHTML = '';
         data.spc.forEach(r => {
             spcHTML += `<tr>
@@ -241,7 +295,6 @@
         });
         document.getElementById('spc-body').innerHTML = spcHTML;
 
-        // Load Profiles
         let profHTML = '';
         data.profile.forEach(r => {
             profHTML += `<tr>
@@ -260,7 +313,6 @@
         });
         document.getElementById('profile-body').innerHTML = profHTML;
 
-        // Load Notes
         document.getElementById('note-spc').value = data.notes.spc || "";
         document.getElementById('note-bua').value = data.notes.bua || "";
         document.getElementById('note-edging').value = data.notes.edging || "";
@@ -272,7 +324,6 @@
 
     function collectCurrentData() {
         let data = { settings: {}, spc: [], profile: [], notes: {} };
-        
         data.settings.waste = document.getElementById('spc-waste').value;
         data.settings.bua = document.getElementById('len-bua').value;
         data.settings.edging = document.getElementById('len-edging').value;
@@ -283,7 +334,6 @@
             let inputs = tr.querySelectorAll('input');
             data.spc.push({ name: inputs[0].value, w: inputs[1].value, l: inputs[2].value });
         });
-
         document.querySelectorAll('#profile-body tr').forEach(tr => {
             let inputs = tr.querySelectorAll('input');
             let sel = tr.querySelector('select').value;
@@ -302,40 +352,27 @@
     function evalStr(str) { try { return Function('"use strict";return (' + str.replace(/[^\d\.\+\-]/g, '') + ')')()||0; } catch(e){ return 0; } }
 
     function calculateAll(triggerUpload = true) {
-        // 1. คำนวณ SPC
         let spcTotal = 0;
         document.querySelectorAll('#spc-body tr').forEach(row => {
             let w = parseFloat(row.querySelectorAll('input')[1].value) || 0, l = parseFloat(row.querySelectorAll('input')[2].value) || 0;
             let area = w * l;
-            row.querySelector('.spc-area').innerText = area.toFixed(2); 
-            spcTotal += area;
+            row.querySelector('.spc-area').innerText = area.toFixed(2); spcTotal += area;
         });
         
         let waste = parseFloat(document.getElementById('spc-waste').value) || 0;
         let finalSpcArea = spcTotal * (1 + waste/100);
-
         document.getElementById('spc-total-area').innerText = spcTotal.toFixed(2);
         document.getElementById('display-waste').innerText = waste;
         document.getElementById('spc-final-area').innerText = finalSpcArea.toFixed(2);
-        
-        // อัปเดตพื้นที่ SPC ในตารางสรุปด้านล่างสุด
         document.getElementById('sum-spc-area').innerText = finalSpcArea.toFixed(2);
 
-        // 2. คำนวณ บัว-ตัวจบ
         let totals = { bua: 0, edging: 0, trans: 0, corner: 0 };
         document.querySelectorAll('#profile-body tr').forEach(row => {
             let type = row.querySelector('select').value, net = Math.max(0, evalStr(row.querySelectorAll('input')[1].value) - evalStr(row.querySelectorAll('input')[2].value));
-            row.querySelector('.profile-net').innerText = net.toFixed(2); 
-            totals[type] += net;
+            row.querySelector('.profile-net').innerText = net.toFixed(2); totals[type] += net;
         });
 
-        const refs = { 
-            bua: parseFloat(document.getElementById('len-bua').value)||1, 
-            edging: parseFloat(document.getElementById('len-edging').value)||1, 
-            trans: parseFloat(document.getElementById('len-trans').value)||1, 
-            corner: parseFloat(document.getElementById('len-corner').value)||1 
-        };
-
+        const refs = { bua: parseFloat(document.getElementById('len-bua').value)||1, edging: parseFloat(document.getElementById('len-edging').value)||1, trans: parseFloat(document.getElementById('len-trans').value)||1, corner: parseFloat(document.getElementById('len-corner').value)||1 };
         for (let k in totals) {
             document.getElementById(`sum-${k}-len`).innerText = totals[k].toFixed(2);
             document.getElementById(`ref-${k}`).innerText = refs[k].toFixed(1);
